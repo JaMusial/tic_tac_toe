@@ -6,7 +6,7 @@ from itertools import cycle
 
 class Player(NamedTuple):
     label: str     #O lub X
-    colour: str     
+    color: str     
 
 class Move(NamedTuple):
     row: int
@@ -15,11 +15,11 @@ class Move(NamedTuple):
 
 BOARD_SIZE=3
 DEFAULT_PLAYERS = (
-    Player(label="X", colour="blue"),
-    Player(label="O", colour="green"),
+    Player(label="X", color="blue"),
+    Player(label="O", color="green"),
 )
 class TicTacToeGame:
-    def __init__(self, player=DEFAULT_PLAYERS, board_size=BOARD_SIZE):
+    def __init__(self, players=DEFAULT_PLAYERS, board_size=BOARD_SIZE):
         self._players = cycle(players)
         self.board_size = board_size
         self.current_player = next(self._players)
@@ -46,15 +46,75 @@ class TicTacToeGame:
         ]
         self._winning_combos = self._get_winnig_combos()
 
+    def is_valid_move(self, move):
+        """Return tru if valid and False othervise"""
+        row, col = move.row, move.col
+        move_was_not_played = self._current_moves[row][col].label == ""
+        no_winner = not self._has_winner
+        return no_winner and move_was_not_played
+    
+    def process_move(self, move):
+        """Process current move and check if there is a winner"""
+        row, col = move.row, move.col
+        self._current_moves[row][col] = move
+        for combo in self._winning_combos:
+            results = set(
+                self._current_moves[n][m].label
+                for n, m in combo
+            )
+            is_win = (len(results) == 1) and ("" not in results)
+            if is_win:
+                self._has_winner = True
+                self.winner_combo = combo
+                break
+
+    def has_winner(self):
+        return self._has_winner
+
+    def is_tied(self):
+        no_winner = not self._has_winner
+        played_moves = (
+            move.label for row in self._current_moves for move in row
+        )
+        return no_winner and all(played_moves)
+    
+    def toogle_player(self):
+        self.current_player = next(self._players)
+
+    def reset_game(self):
+        """Reset the game state to play again."""
+        for row, row_content in enumerate(self._current_moves):
+            for col, _ in enumerate(row_content):
+                row_content[col] = Move(row, col)
+        self._has_winner = False
+        self.winner_combo = []
+
 
 class Board(tk.Tk):
-    def __init__(self):
+    def __init__(self, game):
         super().__init__()
         self.title("Tic-Tac-Toe")
         self._cells = {}
+        self._game = game
+        self._create_menu()
         self._create_board_display()
         self._create_board_grid()
 
+    def _create_menu(self):
+
+        menu_bar = tk.Menu(master=self)
+        self.config(menu=menu_bar)
+        file_menu = tk.Menu(master=menu_bar)
+        file_menu.add_command(
+            label="Reset",
+            command=self.reset_board
+        )
+
+        file_menu.add_separator()
+
+        file_menu.add_command(label="Exit", command=quit)
+
+        menu_bar.add_cascade(label="File", menu=file_menu)
         
     def _create_board_display(self):
         display_frame = tk.Frame(master=self)
@@ -65,13 +125,14 @@ class Board(tk.Tk):
             font=font.Font(size=28, weight="bold"),
         )
         self.display.pack()
+
     def _create_board_grid(self):
         grid_frame=tk.Frame(master=self)
         grid_frame.pack()
-        for row in range(3):
+        for row in range(self._game.board_size):
             self.rowconfigure(row, weight=1, minsize=50)
             self.columnconfigure(row, weight=1, minsize=75)
-            for col in range(3):
+            for col in range(self._game.board_size):
                 button = tk.Button(
                     master=grid_frame,
                     text="",
@@ -82,6 +143,7 @@ class Board(tk.Tk):
                     highlightbackground="lightblue",
                 )
                 self._cells[button] = (row, col)
+                button.bind("<ButtonPress-1>",self.play)
                 button.grid(
                     row=row,
                     column=col,
@@ -90,9 +152,52 @@ class Board(tk.Tk):
                     sticky="nsew"
                 )
 
+    def play(self, event):
+        """Handle plyer moves"""
+        clicked_btn = event.widget
+        row, col = self._cells[clicked_btn]
+        move = Move(row, col, self._game.current_player.label)
+        if self._game.is_valid_move(move):
+            self._update_button(clicked_btn)
+            self._game.process_move(move)
+            if self._game.is_tied():
+                self._update_display(msg="Remis", color="red")
+            elif self._game.has_winner():
+                self._highlight_cells()
+                msg = f'Gracz "{self._game.current_player.label}" wygrał!'
+                color = self._game.current_player.color
+                self._update_display(msg,color)
+            else:
+                self._game.toogle_player()
+                msg = f"Tura {self._game.current_player.label}"
+                self._update_display(msg)
+
+    def _update_button(self, clicked_btn):
+        clicked_btn.config(text=self._game.current_player.label)
+        clicked_btn.config(fg=self._game.current_player.color)
+
+    def _update_display(self, msg, color="black"):
+        self.display["text"] = msg
+        self.display["fg"] = color
+
+    def _highlight_cells(self):
+        for button, coordinates in self._cells.items():
+            if coordinates in self._game.winner_combo:
+                button.config(highlightbackground="red")
+
+    def reset_board(self):
+        """Reset the game's board to play again."""
+        self._game.reset_game()
+        self._update_display(msg="Gotowi?")
+        for button in self._cells.keys():
+            button.config(highlightbackground="lightblue")
+            button.config(text="")
+            button.config(fg="black")
+    
 def main():
     """Create the game's board and run its main loop."""
-    board = Board()
+    game = TicTacToeGame()
+    board = Board(game)
     board.mainloop()
 
 if __name__ == "__main__":
